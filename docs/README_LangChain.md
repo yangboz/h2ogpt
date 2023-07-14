@@ -36,6 +36,8 @@ Open-source data types are supported, .msg is not supported due to GPL-3 require
    - `.html`: HTML File,
    - `.docx`: Word Document (optional),
    - `.doc`: Word Document (optional),
+   - `.xlsx`: Excel Document (optional),
+   - `.xls`: Excel Document (optional),
    - `.enex`: EverNote,
    - `.eml`: Email,
    - `.epub`: EPub,
@@ -58,7 +60,7 @@ sudo apt-get install tesseract-ocr
 ```
 and ensure you `pip install pytesseract`.
 
-To support Microsoft Office docx and doc, on Ubuntu run:
+To support Microsoft Office docx, doc, xls, xlsx, on Ubuntu run:
 ```bash
 sudo apt-get install libreoffice
 ```
@@ -135,6 +137,15 @@ By default, `generate.py` will load an existing UserData database and add any do
 python generate.py --base_model=h2oai/h2ogpt-oig-oasst1-512-6_9b --langchain_mode=UserData
 ```
 which will avoid using `user_path` since it is no longer passed.  Otherwise when passed, any new files will be added or changed (by hash) files will be updated (delete old sources and add new sources).
+
+If you have enough GPU memory for embedding, but not the LLM as well, then a less private mode is to use OpenAI model.
+```bash
+python generate.py  --inference_server=openai_chat --base_model=gpt-3.5-turbo --score_model=None --langchain_mode=ChatLLM --visible_langchain_modes="['ChatLLM', 'UserData', 'MyData']"
+```
+and if you want to push image caption model to get better captions, this can be done if have enough GPU memory or if use OpenAI:
+```bash
+python generate.py  --inference_server=openai_chat --base_model=gpt-3.5-turbo --score_model=None --langchain_mode=ChatLLM --visible_langchain_modes="['ChatLLM', 'UserData', 'MyData']" --captions_model=Salesforce/blip2-flan-t5-xl
+```
 
 ### Note about FAISS
 
@@ -237,7 +248,7 @@ Notes:
 
 * Since h2oGPT is focused on privacy, connecting to weaviate via WCS is not supported as that will expose your data to a 3rd party
 * Weaviate doesn't know about persistent directory throughout code, and maintains locations based upon collection name
-* Weaviate doesn't support query of all metadata except via similarity search up to 10k documents, so full list of sources is not possible in h2oGPT UI for `get sources` or `show sources`
+* Weaviate doesn't support query of all metadata except via similarity search up to 10k documents, so full list of sources is not possible in h2oGPT UI for `Update UI with Document(s) from DB` or `Show Sources from DB`
 
 ## Document Question-Answer FAQ
 
@@ -270,19 +281,31 @@ For links to direct to the document and download to your local machine, the orig
   * UI with side-by-side model comparisons against two models at a time with independent chat streams
   * Fine-tuning framework with QLORA 4-bit, 8-bit, 16-bit GPU fine-tuning or CPU fine-tuning
 
-* [localGPT](https://github.com/PromtEngineer/localGPT) .  By comparison, h2oGPT has similar benefits as compared to localGPT.  Both h2oGPT and localGPT can use GPUs for LLMs and embeddings, including latest Vicuna or WizardLM models.
+* [localGPT](https://github.com/PromtEngineer/localGPT).  By comparison, h2oGPT has similar benefits as compared to localGPT.  Both h2oGPT and localGPT can use GPUs for LLMs and embeddings, including latest Vicuna or WizardLM models.
+
+* [Quiver](https://github.com/StanGirard/quivr). By comparison, Quiver requires docker but also supports audio and video and currently only supports OpenAI models and embeddings.
+
+* [GPT4-PDF-Chatbot-LangChain](https://github.com/mayooear/gpt4-pdf-chatbot-langchain).  Uses OpenAI, pinecone, etc. No longer maintained.
 
 * [Vault-AI](https://github.com/pashpashpash/vault-ai) but h2oGPT is fully private and open-source by not using OpenAI or [pinecone](https://www.pinecone.io/).
 
 * [DB-GPT](https://github.com/csunny/DB-GPT) but h2oGPT is fully commercially viable by not using [Vicuna](https://lmsys.org/blog/2023-03-30-vicuna/) (LLaMa based with GPT3.5 training data).
 
+* [ChatBox](https://github.com/Bin-Huang/chatbox) has ability to collaborate.
+
 * [Chat2GB](https://github.com/alibaba/Chat2DB) like DB-GPT by Alibaba.
+
+* [pdfGPT](https://github.com/bhaskatripathi/pdfGPT) like PrivateGPT but no longer maintained.
+
+* [docquery](https://github.com/impira/docquery) like PrivateGPT but uses LayoutLM.
 
 * [ChatPDF](https://www.chatpdf.com/) but h2oGPT is open-source and private and many more data types.
 
 * [Sharly](https://www.sharly.ai/) but h2oGPT is open-source and private and many more data types.  Sharly and h2oGPT both allow sharing work through UserData shared collection.
 
 * [ChatDoc](https://chatdoc.com/) but h2oGPT is open-source and private. ChatDoc shows nice side-by-side view with doc on one side and chat in other.  Select specific doc or text in doc for question/summary.
+
+* [Casalioy](https://github.com/su77ungr/casalioy) with focus on air-gap with docker, otherwise like older privateGPT.
 
 * [Perplexity](https://www.perplexity.ai/) but h2oGPT is open-source and private, similar control over sources.
 
@@ -297,6 +320,8 @@ For links to direct to the document and download to your local machine, the orig
 * [Bard](https://bard.google.com/) but h2oGPT is open-source and private.  Bard has better automatic link and image use.
 
 * [ChatGPT](https://chat.openai.com/) but h2oGPT is open-source and private.  ChatGPT code interpreter has better image, video, etc. handling.
+
+* [ChatGPT-Next-Web](https://github.com/Yidadaa/ChatGPT-Next-Web) like local ChatGPT.
 
 * [Bing](https://www.bing.com/) but h2oGPT is open-source and private.  Bing has excellent search queries and handling of results.
 

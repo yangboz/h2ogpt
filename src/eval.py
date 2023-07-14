@@ -6,8 +6,8 @@ import pandas as pd
 import torch
 from matplotlib import pyplot as plt
 
-from generate import eval_func_param_names, eval_extra_columns, get_context, get_score_model, get_model, evaluate, \
-    inputs_kwargs_list, check_locals
+from evaluate_params import eval_func_param_names, eval_extra_columns
+from gen import get_context, get_score_model, get_model, evaluate, check_locals
 from prompter import Prompter
 from utils import clear_torch_cache, NullContext, get_kwargs
 
@@ -19,7 +19,8 @@ def run_eval(  # for local function:
         eval_filename=None, eval_prompts_only_num=None, eval_prompts_only_seed=None, eval_as_output=None,
         examples=None, memory_restriction_level=None,
         # for get_model:
-        score_model=None, load_8bit=None, load_4bit=None, load_half=None, infer_devices=None, tokenizer_base_model=None,
+        score_model=None, load_8bit=None, load_4bit=None, load_half=None, load_gptq=None, use_safetensors=None,
+        use_gpu_id=None, tokenizer_base_model=None,
         gpu_id=None, local_files_only=None, resume_download=None, use_auth_token=None,
         trust_remote_code=None, offload_folder=None, compile_model=None,
         # for evaluate args beyond what's already above, or things that are always dynamic and locally created
@@ -35,9 +36,11 @@ def run_eval(  # for local function:
         num_return_sequences=None,
         do_sample=None,
         langchain_mode=None,
+        langchain_action=None,
         top_k_docs=None,
         chunk=None,
         chunk_size=None,
+        document_subset=None,
         document_choice=None,
         # for evaluate kwargs:
         src_lang=None, tgt_lang=None, concurrency_count=None, save_dir=None, sanitize_bot_response=None,

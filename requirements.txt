@@ -86,7 +86,7 @@ huggingface_hub==0.15.1
 appdirs==1.4.4
 fire==0.5.0
 docutils==0.20.1
-torch==2.0.1
+torch==2.0.1; sys_platform != "darwin" and platform_machine != "arm64"
 evaluate==0.4.0
 rouge_score==0.1.2
 sacrebleu==2.3.1
@@ -99,7 +99,7 @@ matplotlib==3.7.1
 loralib==0.1.1
 bitsandbytes==0.39.0
 accelerate==0.20.3
-git+https://github.com/huggingface/peft.git@0b62b4378b4ce9367932c73540349da9a41bdea8
+git+https://github.com/huggingface/peft.git@06fd06a4d2e8ed8c3a253c67d9c3cb23e0f497ad
 transformers==4.30.2
 tokenizers==0.13.3
 APScheduler==3.10.1
@@ -125,8 +125,8 @@ pytest-xdist==3.2.1
 nltk==3.8.1
 textstat==0.7.3
 # pandoc==2.3
-#pypandoc==1.11
-pypandoc_binary==1.11
+pypandoc==1.11; sys_platform == "darwin" and platform_machine == "arm64"
+pypandoc_binary==1.11; platform_machine == "x86_64"
 openpyxl==3.1.2
 lm_dataformat==0.0.20
 bioc==2.0

@@ -1,10 +1,9 @@
 import time
-
 import pytest
 
-from enums import source_prefix, source_postfix
-from prompter import generate_prompt
 from tests.utils import wrap_test_forked
+from src.enums import source_prefix, source_postfix
+from src.prompter import generate_prompt
 
 example_data_point0 = dict(instruction="Summarize",
                            input="Ducks eat seeds by the lake, then swim in the lake where fish eat small animals.",
@@ -45,9 +44,51 @@ prompt_fastchat = """A chat between a curious user and an artificial intelligenc
 
 prompt_humanbot = """<human>: Hello!\n<bot>: Hi!\n<human>: How are you?\n<bot>: I'm good\n<human>: Go to the market?\n<bot>:"""
 
-prompt_prompt_answer = "<|prompt|>Hello!<|answer|>Hi!<|endoftext|><|prompt|>How are you?<|answer|>I'm good<|endoftext|><|prompt|>Go to the market?<|answer|>"
+prompt_prompt_answer = "<|prompt|>Hello!<|endoftext|><|answer|>Hi!<|endoftext|><|prompt|>How are you?<|endoftext|><|answer|>I'm good<|endoftext|><|prompt|>Go to the market?<|endoftext|><|answer|>"
 
-prompt_prompt_answer_openllama = "<|prompt|>Hello!<|answer|>Hi!</s><|prompt|>How are you?<|answer|>I'm good</s><|prompt|>Go to the market?<|answer|>"
+prompt_prompt_answer_openllama = "<|prompt|>Hello!</s><|answer|>Hi!</s><|prompt|>How are you?</s><|answer|>I'm good</s><|prompt|>Go to the market?</s><|answer|>"
+
+prompt_mpt_instruct = """Below is an instruction that describes a task. Write a response that appropriately completes the request.
+
+### Instruction
+Hello!
+
+### Response
+Hi!
+
+### Instruction
+How are you?
+
+### Response
+I'm good
+
+### Instruction
+Go to the market?
+
+### Response
+"""
+
+prompt_mpt_chat = """<|im_start|>system
+A conversation between a user and an LLM-based AI assistant. The assistant gives helpful and honest answers.
+<|im_end|><|im_start|>user
+Hello!<|im_end|><|im_start|>assistant
+Hi!<|im_end|><|im_start|>user
+How are you?<|im_end|><|im_start|>assistant
+I'm good<|im_end|><|im_start|>user
+Go to the market?<|im_end|><|im_start|>assistant
+"""
+
+prompt_falcon = """User: Hello!
+
+Assistant: Hi!
+
+User: How are you?
+
+Assistant: I'm good
+
+User: Go to the market?
+
+Assistant:"""
 
 
 @wrap_test_forked
@@ -57,6 +98,9 @@ prompt_prompt_answer_openllama = "<|prompt|>Hello!<|answer|>Hi!</s><|prompt|>How
                              ('human_bot', prompt_humanbot),
                              ('prompt_answer', prompt_prompt_answer),
                              ('prompt_answer_openllama', prompt_prompt_answer_openllama),
+                             ('mptinstruct', prompt_mpt_instruct),
+                             ('mptchat', prompt_mpt_chat),
+                             ('falcon', prompt_falcon),
                          ]
                          )
 def test_prompt_with_context(prompt_type, expected):
@@ -70,8 +114,8 @@ def test_prompt_with_context(prompt_type, expected):
     stream_output = False
     debug = False
 
-    from prompter import Prompter
-    from generate import history_to_context
+    from src.prompter import Prompter
+    from src.gen import history_to_context
 
     t0 = time.time()
     history = [["Hello!", "Hi!"],
@@ -103,9 +147,27 @@ prompt_fastchat1 = """A chat between a curious user and an artificial intelligen
 
 prompt_humanbot1 = """<human>: Go to the market?\n<bot>:"""
 
-prompt_prompt_answer1 = "<|prompt|>Go to the market?<|answer|>"
+prompt_prompt_answer1 = "<|prompt|>Go to the market?<|endoftext|><|answer|>"
 
-prompt_prompt_answer_openllama1 = "<|prompt|>Go to the market?<|answer|>"
+prompt_prompt_answer_openllama1 = "<|prompt|>Go to the market?</s><|answer|>"
+
+prompt_mpt_instruct1 = """Below is an instruction that describes a task. Write a response that appropriately completes the request.
+
+### Instruction
+Go to the market?
+
+### Response
+"""
+
+prompt_mpt_chat1 = """<|im_start|>system
+A conversation between a user and an LLM-based AI assistant. The assistant gives helpful and honest answers.
+<|im_end|><|im_start|>user
+Go to the market?<|im_end|><|im_start|>assistant
+"""
+
+prompt_falcon1 = """User: Go to the market?
+
+Assistant:"""
 
 
 @pytest.mark.parametrize("prompt_type,expected",
@@ -114,6 +176,9 @@ prompt_prompt_answer_openllama1 = "<|prompt|>Go to the market?<|answer|>"
                              ('human_bot', prompt_humanbot1),
                              ('prompt_answer', prompt_prompt_answer1),
                              ('prompt_answer_openllama', prompt_prompt_answer_openllama1),
+                             ('mptinstruct', prompt_mpt_instruct1),
+                             ('mptchat', prompt_mpt_chat1),
+                             ('falcon', prompt_falcon1),
                          ]
                          )
 @wrap_test_forked
@@ -124,7 +189,7 @@ def test_prompt_with_no_context(prompt_type, expected):
     stream_output = False
     debug = False
 
-    from prompter import Prompter
+    from src.prompter import Prompter
     context = ''
     instruction = "Go to the market?"
 

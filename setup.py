@@ -50,11 +50,17 @@ setuptools.setup(
     },
     package_data={
         'h2ogpt': [
+            'src/**',
             'data/**',
             'docs/**',
             'models/**',
             'spaces/**',
             'tests/**',
+        ],
+    },
+    exclude_package_data={
+        'h2ogpt': [
+            '**/__pycache__/**',
         ],
     },
     version=version,
@@ -76,7 +82,7 @@ setuptools.setup(
         'WIKI_EXTRA': install_wiki_extra,
     },
     dependency_links=[
-        'https://download.pytorch.org/whl/cu117',
+        'https://download.pytorch.org/whl/cu118',
     ],
     classifiers=[],
     python_requires='>=3.10',

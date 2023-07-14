@@ -32,7 +32,7 @@ from tests.utils import wrap_test_forked
 )
 @wrap_test_forked
 def test_score_eval(base_model):
-    from generate import main
+    from src.gen import main
     main(
         base_model=base_model,
         chat=False,
@@ -41,7 +41,7 @@ def test_score_eval(base_model):
         eval_prompts_only_num=500,
         eval_as_output=False,
         num_beams=2,
-        infer_devices=False,
+        use_gpu_id=False,
     )
 
 

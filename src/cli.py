@@ -1,7 +1,8 @@
 import copy
 import torch
 
-from generate import eval_func_param_names, get_score_model, get_model, evaluate, check_locals
+from evaluate_params import eval_func_param_names
+from gen import get_score_model, get_model, evaluate, check_locals
 from prompter import non_hf_types
 from utils import clear_torch_cache, NullContext, get_kwargs
 
@@ -11,7 +12,9 @@ def run_cli(  # for local function:
         debug=None, chat_context=None,
         examples=None, memory_restriction_level=None,
         # for get_model:
-        score_model=None, load_8bit=None, load_4bit=None, load_half=None, infer_devices=None, tokenizer_base_model=None,
+        score_model=None, load_8bit=None, load_4bit=None, load_half=None,
+        load_gptq=None, use_safetensors=None,
+        use_gpu_id=None, tokenizer_base_model=None,
         gpu_id=None, local_files_only=None, resume_download=None, use_auth_token=None,
         trust_remote_code=None, offload_folder=None, compile_model=None,
         # for some evaluate args
@@ -19,7 +22,9 @@ def run_cli(  # for local function:
         temperature=None, top_p=None, top_k=None, num_beams=None,
         max_new_tokens=None, min_new_tokens=None, early_stopping=None, max_time=None, repetition_penalty=None,
         num_return_sequences=None, do_sample=None, chat=None,
-        langchain_mode=None, document_choice=None, top_k_docs=None, chunk=None, chunk_size=None,
+        langchain_mode=None, langchain_action=None,
+        document_subset=None, document_choice=None,
+        top_k_docs=None, chunk=None, chunk_size=None,
         # for evaluate kwargs
         src_lang=None, tgt_lang=None, concurrency_count=None, save_dir=None, sanitize_bot_response=None,
         model_state0=None,

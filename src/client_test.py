@@ -7,18 +7,18 @@ python generate.py  --base_model=h2oai/h2ogpt-oig-oasst1-512-6_9b
 
 NOTE: For private models, add --use-auth_token=True
 
-NOTE: --infer_devices=True (default) must be used for multi-GPU in case see failures with cuda:x cuda:y mismatches.
+NOTE: --use_gpu_id=True (default) must be used for multi-GPU in case see failures with cuda:x cuda:y mismatches.
 Currently, this will force model to be on a single GPU.
 
 Then run this client as:
 
-python client_test.py
+python src/client_test.py
 
 
 
 For HF spaces:
 
-HOST="https://h2oai-h2ogpt-chatbot.hf.space" python client_test.py
+HOST="https://h2oai-h2ogpt-chatbot.hf.space" python src/client_test.py
 
 Result:
 
@@ -28,7 +28,7 @@ Loaded as API: https://h2oai-h2ogpt-chatbot.hf.space ✔
 
 For demo:
 
-HOST="https://gpt.h2o.ai" python client_test.py
+HOST="https://gpt.h2o.ai" python src/client_test.py
 
 Result:
 
@@ -48,7 +48,7 @@ import markdown  # pip install markdown
 import pytest
 from bs4 import BeautifulSoup  # pip install beautifulsoup4
 
-from enums import DocumentChoices
+from enums import DocumentChoices, LangChainAction
 
 debug = False
 
@@ -67,7 +67,9 @@ def get_client(serialize=True):
 def get_args(prompt, prompt_type, chat=False, stream_output=False,
              max_new_tokens=50,
              top_k_docs=3,
-             langchain_mode='Disabled'):
+             langchain_mode='Disabled',
+             langchain_action=LangChainAction.QUERY.value,
+             prompt_dict=None):
     from collections import OrderedDict
     kwargs = OrderedDict(instruction=prompt if chat else '',  # only for chat=True
                          iinput='',  # only for chat=True
@@ -76,7 +78,7 @@ def get_args(prompt, prompt_type, chat=False, stream_output=False,
                          # but leave stream_output=False for simple input/output mode
                          stream_output=stream_output,
                          prompt_type=prompt_type,
-                         prompt_dict='',
+                         prompt_dict=prompt_dict,
                          temperature=0.1,
                          top_p=0.75,
                          top_k=40,
@@ -92,12 +94,14 @@ def get_args(prompt, prompt_type, chat=False, stream_output=False,
                          instruction_nochat=prompt if not chat else '',
                          iinput_nochat='',  # only for chat=False
                          langchain_mode=langchain_mode,
+                         langchain_action=langchain_action,
                          top_k_docs=top_k_docs,
                          chunk=True,
                          chunk_size=512,
-                         document_choice=[DocumentChoices.All_Relevant.name],
+                         document_subset=DocumentChoices.Relevant.name,
+                         document_choice=[],
                          )
-    from generate import eval_func_param_names
+    from evaluate_params import eval_func_param_names
     assert len(set(eval_func_param_names).difference(set(list(kwargs.keys())))) == 0
     if chat:
         # add chatbot output on end.  Assumes serialize=False
@@ -198,8 +202,10 @@ def run_client_nochat_api_lean_morestuff(prompt, prompt_type='human_bot', max_ne
         instruction_nochat=prompt,
         iinput_nochat='',
         langchain_mode='Disabled',
+        langchain_action=LangChainAction.QUERY.value,
         top_k_docs=4,
-        document_choice=['All'],
+        document_subset=DocumentChoices.Relevant.name,
+        document_choice=[],
     )
 
     api_name = '/submit_nochat_api'  # NOTE: like submit_nochat but stable API for string dict passing
@@ -219,21 +225,24 @@ def run_client_nochat_api_lean_morestuff(prompt, prompt_type='human_bot', max_ne
 @pytest.mark.skip(reason="For manual use against some server, no server launched")
 def test_client_chat(prompt_type='human_bot'):
     return run_client_chat(prompt='Who are you?', prompt_type=prompt_type, stream_output=False, max_new_tokens=50,
-                           langchain_mode='Disabled')
+                           langchain_mode='Disabled', langchain_action=LangChainAction.QUERY.value)
 
 
 @pytest.mark.skip(reason="For manual use against some server, no server launched")
 def test_client_chat_stream(prompt_type='human_bot'):
     return run_client_chat(prompt="Tell a very long kid's story about birds.", prompt_type=prompt_type,
                            stream_output=True, max_new_tokens=512,
-                           langchain_mode='Disabled')
+                           langchain_mode='Disabled', langchain_action=LangChainAction.QUERY.value)
 
 
-def run_client_chat(prompt, prompt_type, stream_output, max_new_tokens, langchain_mode):
+def run_client_chat(prompt, prompt_type, stream_output, max_new_tokens, langchain_mode, langchain_action,
+                    prompt_dict=None):
     client = get_client(serialize=False)
 
     kwargs, args = get_args(prompt, prompt_type, chat=True, stream_output=stream_output,
-                            max_new_tokens=max_new_tokens, langchain_mode=langchain_mode)
+                            max_new_tokens=max_new_tokens, langchain_mode=langchain_mode,
+                            langchain_action=langchain_action,
+                            prompt_dict=prompt_dict)
     return run_client(client, prompt, args, kwargs)
 
 
@@ -276,14 +285,15 @@ def run_client(client, prompt, args, kwargs, do_md_to_text=True, verbose=False):
 def test_client_nochat_stream(prompt_type='human_bot'):
     return run_client_nochat_gen(prompt="Tell a very long kid's story about birds.", prompt_type=prompt_type,
                                  stream_output=True, max_new_tokens=512,
-                                 langchain_mode='Disabled')
+                                 langchain_mode='Disabled', langchain_action=LangChainAction.QUERY.value)
 
 
-def run_client_nochat_gen(prompt, prompt_type, stream_output, max_new_tokens, langchain_mode):
+def run_client_nochat_gen(prompt, prompt_type, stream_output, max_new_tokens, langchain_mode, langchain_action):
     client = get_client(serialize=False)
 
     kwargs, args = get_args(prompt, prompt_type, chat=False, stream_output=stream_output,
-                            max_new_tokens=max_new_tokens, langchain_mode=langchain_mode)
+                            max_new_tokens=max_new_tokens, langchain_mode=langchain_mode,
+                            langchain_action=langchain_action)
     return run_client_gen(client, prompt, args, kwargs)
 
 

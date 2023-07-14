@@ -28,13 +28,21 @@ class PromptType(Enum):
     gptj = 22
     prompt_answer_openllama = 23
     vicuna11 = 24
+    mptinstruct = 25
+    mptchat = 26
+    falcon = 27
 
 
 class DocumentChoices(Enum):
-    All_Relevant = 0
-    All_Relevant_Only_Sources = 1
-    Only_All_Sources = 2
-    Just_LLM = 3
+    Relevant = 0
+    Sources = 1
+    All = 2
+
+
+non_query_commands = [
+    DocumentChoices.Sources.name,
+    DocumentChoices.All.name
+]
 
 
 class LangChainMode(Enum):
@@ -52,17 +60,28 @@ class LangChainMode(Enum):
     H2O_DAI_DOCS = "DriverlessAI docs"
 
 
+class LangChainAction(Enum):
+    """LangChain action"""
+
+    QUERY = "Query"
+    # WIP:
+    # SUMMARIZE_MAP = "Summarize_map_reduce"
+    SUMMARIZE_MAP = "Summarize"
+    SUMMARIZE_ALL = "Summarize_all"
+    SUMMARIZE_REFINE = "Summarize_refine"
+
+
 no_server_str = no_lora_str = no_model_str = '[None/Remove]'
 
-
-# from site-packages/langchain/llms/openai.py, but needed since ChatOpenAI doesn't have this information
+# from site-packages/langchain/llms/openai.py
+# but needed since ChatOpenAI doesn't have this information
 model_token_mapping = {
     "gpt-4": 8192,
     "gpt-4-0314": 8192,
     "gpt-4-32k": 32768,
     "gpt-4-32k-0314": 32768,
     "gpt-3.5-turbo": 4096,
-    "gpt-3.5-turbo-16k": 16*1024,
+    "gpt-3.5-turbo-16k": 16 * 1024,
     "gpt-3.5-turbo-0301": 4096,
     "text-ada-001": 2049,
     "ada": 2049,
@@ -78,7 +97,6 @@ model_token_mapping = {
     "code-cushman-002": 2048,
     "code-cushman-001": 2048,
 }
-
 
 source_prefix = "Sources [Score | Link]:"
 source_postfix = "End Sources<p>"

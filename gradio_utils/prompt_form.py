@@ -93,26 +93,3 @@ def make_chatbots(output_label0, output_label0_model2, **kwargs):
         text_output2 = gr.Chatbot(label=output_label0_model2,
                                   visible=False and not kwargs['model_lock'], height=kwargs['height'] or 400)
     return text_output, text_output2, text_outputs
-
-
-def make_prompt_form(kwargs):
-    if kwargs['input_lines'] > 1:
-        instruction_label = "Shift-Enter to Submit, Enter for more lines"
-    else:
-        instruction_label = "Enter to Submit, Shift-Enter for more lines"
-
-    with gr.Row():#elem_id='prompt-form-area'):
-        with gr.Column(scale=50):
-            instruction = gr.Textbox(
-                lines=kwargs['input_lines'],
-                label='Ask anything',
-                placeholder=instruction_label,
-                info=None,
-                elem_id='prompt-form',
-                container=True,
-            )
-        with gr.Row():
-            submit = gr.Button(value='Submit', variant='primary', scale=0, size='sm')
-            stop_btn = gr.Button(value="Stop", variant='secondary', scale=0, size='sm')
-
-    return instruction, submit, stop_btn

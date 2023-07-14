@@ -23,9 +23,6 @@ prompt_type_to_model_name = {
         'gpt2',
         'distilgpt2',
         'mosaicml/mpt-7b-storywriter',
-        'mosaicml/mpt-7b-instruct',  # internal code handles instruct
-        'mosaicml/mpt-7b-chat',  # NC, internal code handles instruct
-        'mosaicml/mpt-30b-instruct',  # internal code handles instruct
     ],
     'gptj': ['gptj', 'gpt4all_llama'],
     'prompt_answer': [
@@ -41,6 +38,7 @@ prompt_type_to_model_name = {
         'h2oai/h2ogpt-gm-oasst1-en-2048-falcon-40b-v2',
         'h2oai/h2ogpt-gm-oasst1-en-xgen-7b-8k',
         'h2oai/h2ogpt-gm-oasst1-multilang-xgen-7b-8k',
+        'TheBloke/h2ogpt-gm-oasst1-en-2048-falcon-40b-v2-GPTQ',
     ],
     'prompt_answer_openllama': [
         'h2oai/h2ogpt-gm-oasst1-en-2048-open-llama-7b-preview-300bt',
@@ -49,7 +47,7 @@ prompt_type_to_model_name = {
         'h2oai/h2ogpt-gm-oasst1-en-2048-open-llama-7b',
         'h2oai/h2ogpt-gm-oasst1-en-2048-open-llama-13b',
     ],
-    'instruct': [],
+    'instruct': ['TheBloke/llama-30b-supercot-SuperHOT-8K-fp16'],  # https://huggingface.co/TheBloke/llama-30b-supercot-SuperHOT-8K-fp16#prompting
     'instruct_with_end': ['databricks/dolly-v2-12b'],
     'quality': [],
     'human_bot': [
@@ -74,8 +72,11 @@ prompt_type_to_model_name = {
     "wizard_mega": ['openaccess-ai-collective/wizard-mega-13b'],
     "instruct_simple": ['JosephusCheung/Guanaco'],
     "wizard_vicuna": ['ehartford/Wizard-Vicuna-13B-Uncensored'],
-    "wizard2": ['llama', 'mosaicml/mpt-30b-instruct'],
+    "wizard2": ['llama'],
+    "mptinstruct": ['mosaicml/mpt-30b-instruct', 'mosaicml/mpt-7b-instruct', 'mosaicml/mpt-30b-instruct'],
+    "mptchat": ['mosaicml/mpt-7b-chat', 'mosaicml/mpt-30b-chat', 'TheBloke/mpt-30B-chat-GGML'],
     "vicuna11": ['lmsys/vicuna-33b-v1.3'],
+    "falcon": ['tiiuae/falcon-40b-instruct', 'tiiuae/falcon-40b', 'tiiuae/falcon-7b-instruct', 'tiiuae/falcon-7b'],
     # could be plain, but default is correct prompt_type for default TheBloke model ggml-wizardLM-7B.q4_2.bin
 }
 if os.getenv('OPENAI_API_KEY'):
@@ -120,7 +121,7 @@ def get_prompt(prompt_type, prompt_dict, chat, context, reduced, making_context,
     elif prompt_type in [PromptType.custom.value, str(PromptType.custom.value),
                          PromptType.custom.name]:
         promptA = prompt_dict.get('promptA', '')
-        promptB = prompt_dict('promptB', '')
+        promptB = prompt_dict.get('promptB', '')
         PreInstruct = prompt_dict.get('PreInstruct', '')
         PreInput = prompt_dict.get('PreInput', '')
         PreResponse = prompt_dict.get('PreResponse', '')
@@ -293,7 +294,7 @@ Current Time: {}
         humanstr = prompt_tokens
         botstr = answer_tokens
         terminate_response = [humanstr, PreResponse, eos]
-        chat_sep = ''
+        chat_sep = eos
         chat_turn_sep = eos
     elif prompt_type in [PromptType.prompt_answer_openllama.value, str(PromptType.prompt_answer_openllama.value),
                          PromptType.prompt_answer_openllama.name]:
@@ -309,7 +310,7 @@ Current Time: {}
         humanstr = prompt_tokens
         botstr = answer_tokens
         terminate_response = [humanstr, PreResponse, eos]
-        chat_sep = ''
+        chat_sep = eos
         chat_turn_sep = eos
     elif prompt_type in [PromptType.open_assistant.value, str(PromptType.open_assistant.value),
                          PromptType.open_assistant.name]:
@@ -520,6 +521,67 @@ ASSISTANT:
             # normally LLM adds space after this, because was how trained.
             # if add space here, non-unique tokenization will often make LLM produce wrong output
             PreResponse = PreResponse
+    elif prompt_type in [PromptType.mptinstruct.value, str(PromptType.mptinstruct.value),
+                         PromptType.mptinstruct.name]:
+        # https://huggingface.co/mosaicml/mpt-30b-instruct#formatting
+        promptA = promptB = 'Below is an instruction that describes a task. Write a response that appropriately completes the request.\n' if not (
+                chat and reduced) else ''
+
+        PreInstruct = """
+### Instruction
+"""
+
+        PreInput = """
+### Input
+"""
+
+        PreResponse = """
+### Response
+"""
+        terminate_response = None
+        chat_turn_sep = chat_sep = '\n'
+        humanstr = PreInstruct
+        botstr = PreResponse
+    elif prompt_type in [PromptType.mptchat.value, str(PromptType.mptchat.value),
+                         PromptType.mptchat.name]:
+        # https://huggingface.co/TheBloke/mpt-30B-chat-GGML#prompt-template
+        promptA = promptB = """<|im_start|>system\nA conversation between a user and an LLM-based AI assistant. The assistant gives helpful and honest answers.\n<|im_end|>""" if not (
+                chat and reduced) else ''
+
+        PreInstruct = """<|im_start|>user
+"""
+
+        PreInput = None
+
+        PreResponse = """<|im_end|><|im_start|>assistant
+"""
+        terminate_response = ['<|im_end|>']
+        chat_sep = ''
+        chat_turn_sep = '<|im_end|>'
+        humanstr = PreInstruct
+        botstr = PreResponse
+    elif prompt_type in [PromptType.falcon.value, str(PromptType.falcon.value),
+                         PromptType.falcon.name]:
+        promptA = promptB = "" if not (chat and reduced) else ''
+
+        PreInstruct = """User: """
+
+        PreInput = None
+
+        PreResponse = """Assistant:"""
+        terminate_response = ['\nUser', "<|endoftext|>"]
+        chat_sep = '\n\n'
+        chat_turn_sep = '\n\n'
+        humanstr = PreInstruct
+        botstr = PreResponse
+        if making_context:
+            # when making context, want it to appear as-if LLM generated, which starts with space after :
+            PreResponse = 'Assistant: '
+        else:
+            # normally LLM adds space after this, because was how trained.
+            # if add space here, non-unique tokenization will often make LLM produce wrong output
+            PreResponse = PreResponse
+        # generates_leading_space = True
     else:
         raise RuntimeError("No such prompt_type=%s" % prompt_type)
 
@@ -693,7 +755,9 @@ class Prompter(object):
                 output = clean_response(output)
             elif prompt is None:
                 # then use most basic parsing like pipeline
-                if self.botstr in output:
+                if not self.botstr:
+                    pass
+                elif self.botstr in output:
                     if self.humanstr:
                         output = clean_response(output.split(self.botstr)[1].split(self.humanstr)[0])
                     else:

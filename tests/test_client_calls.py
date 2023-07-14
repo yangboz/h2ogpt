@@ -1,12 +1,12 @@
 import ast
 import json
 import os, sys
-
 import pytest
 
-from client_test import get_client, run_client_chat, run_client, get_args, run_client_gen
 from tests.utils import wrap_test_forked, make_user_path_test, get_llama
-from utils import get_githash
+from src.client_test import get_client, get_args, run_client_gen
+from src.enums import LangChainAction
+from src.utils import get_githash
 
 
 @wrap_test_forked
@@ -15,11 +15,11 @@ def test_client1():
     sys.modules.pop('gpt_langchain', None)
     sys.modules.pop('langchain', None)
 
-    from generate import main
+    from src.gen import main
     main(base_model='h2oai/h2ogpt-oig-oasst1-512-6_9b', prompt_type='human_bot', chat=False,
          stream_output=False, gradio=True, num_beams=1, block_gradio_exit=False)
 
-    from client_test import test_client_basic
+    from src.client_test import test_client_basic
     res_dict, _ = test_client_basic()
     assert res_dict['prompt'] == 'Who are you?'
     assert res_dict['iinput'] == ''
@@ -33,11 +33,11 @@ def test_client1api():
     sys.modules.pop('gpt_langchain', None)
     sys.modules.pop('langchain', None)
 
-    from generate import main
+    from src.gen import main
     main(base_model='h2oai/h2ogpt-oig-oasst1-512-6_9b', prompt_type='human_bot', chat=False,
          stream_output=False, gradio=True, num_beams=1, block_gradio_exit=False)
 
-    from client_test import test_client_basic_api
+    from src.client_test import test_client_basic_api
     res_dict, _ = test_client_basic_api()
     assert res_dict['prompt'] == 'Who are you?'
     assert res_dict['iinput'] == ''
@@ -48,7 +48,7 @@ def test_client1api():
 @pytest.mark.parametrize("admin_pass", ['', 'foodoo1234'])
 @wrap_test_forked
 def test_client1api_lean(admin_pass):
-    from generate import main
+    from src.gen import main
     base_model = 'h2oai/h2ogpt-oig-oasst1-512-6_9b'
     os.environ['ADMIN_PASS'] = admin_pass
     inf_port = os.environ['GRADIO_SERVER_PORT'] = "9999"
@@ -64,7 +64,6 @@ def test_client1api_lean(admin_pass):
     client2.refresh_client()  # test refresh
 
     for client in [client1, client2]:
-
         api_name = '/submit_nochat_api'  # NOTE: like submit_nochat but stable API for string dict passing
         prompt = 'Who are you?'
         kwargs = dict(instruction_nochat=prompt)
@@ -103,7 +102,7 @@ def test_client1api_lean(admin_pass):
 
 @wrap_test_forked
 def test_client1api_lean_chat_server():
-    from generate import main
+    from src.gen import main
     main(base_model='h2oai/h2ogpt-oig-oasst1-512-6_9b', prompt_type='human_bot', chat=True,
          stream_output=True, gradio=True, num_beams=1, block_gradio_exit=False)
 
@@ -132,9 +131,9 @@ def test_client_chat_nostream():
 def test_client_chat_nostream_gpt4all():
     res_dict, client = run_client_chat_with_server(stream_output=False, base_model='gptj', prompt_type='gptj')
     assert 'I am a computer program designed to assist' in res_dict['response'] or \
-        'I am a person who enjoys' in res_dict['response'] or \
-        'I am a student at' in res_dict['response'] or \
-        'I am a person who' in res_dict['response']
+           'I am a person who enjoys' in res_dict['response'] or \
+           'I am a student at' in res_dict['response'] or \
+           'I am a person who' in res_dict['response']
 
 
 @wrap_test_forked
@@ -154,12 +153,13 @@ def test_client_chat_nostream_llama7b():
     prompt_type = get_llama()
     res_dict, client = run_client_chat_with_server(stream_output=False, base_model='llama', prompt_type=prompt_type)
     assert "am a virtual assistant" in res_dict['response'] or \
-        'am a student' in res_dict['response']
+           'am a student' in res_dict['response']
 
 
 def run_client_chat_with_server(prompt='Who are you?', stream_output=False, max_new_tokens=256,
                                 base_model='h2oai/h2ogpt-oig-oasst1-512-6_9b', prompt_type='human_bot',
-                                langchain_mode='Disabled', user_path=None,
+                                langchain_mode='Disabled', langchain_action=LangChainAction.QUERY.value,
+                                user_path=None,
                                 visible_langchain_modes=['UserData', 'MyData'],
                                 reverse_docs=True):
     if langchain_mode == 'Disabled':
@@ -167,7 +167,7 @@ def run_client_chat_with_server(prompt='Who are you?', stream_output=False, max_
         sys.modules.pop('gpt_langchain', None)
         sys.modules.pop('langchain', None)
 
-    from generate import main
+    from src.gen import main
     main(base_model=base_model, prompt_type=prompt_type, chat=True,
          stream_output=stream_output, gradio=True, num_beams=1, block_gradio_exit=False,
          max_new_tokens=max_new_tokens,
@@ -175,9 +175,10 @@ def run_client_chat_with_server(prompt='Who are you?', stream_output=False, max_
          visible_langchain_modes=visible_langchain_modes,
          reverse_docs=reverse_docs)
 
-    from client_test import run_client_chat
+    from src.client_test import run_client_chat
     res_dict, client = run_client_chat(prompt=prompt, prompt_type=prompt_type, stream_output=stream_output,
-                                       max_new_tokens=max_new_tokens, langchain_mode=langchain_mode)
+                                       max_new_tokens=max_new_tokens, langchain_mode=langchain_mode,
+                                       langchain_action=langchain_action)
     assert res_dict['prompt'] == prompt
     assert res_dict['iinput'] == ''
     return res_dict, client
@@ -190,7 +191,8 @@ def test_client_chat_stream():
 
 def run_client_nochat_with_server(prompt='Who are you?', stream_output=False, max_new_tokens=256,
                                   base_model='h2oai/h2ogpt-oig-oasst1-512-6_9b', prompt_type='human_bot',
-                                  langchain_mode='Disabled', user_path=None,
+                                  langchain_mode='Disabled', langchain_action=LangChainAction.QUERY.value,
+                                  user_path=None,
                                   visible_langchain_modes=['UserData', 'MyData'],
                                   reverse_docs=True):
     if langchain_mode == 'Disabled':
@@ -198,18 +200,20 @@ def run_client_nochat_with_server(prompt='Who are you?', stream_output=False, ma
         sys.modules.pop('gpt_langchain', None)
         sys.modules.pop('langchain', None)
 
-    from generate import main
+    from src.gen import main
     main(base_model=base_model, prompt_type=prompt_type, chat=True,
          stream_output=stream_output, gradio=True, num_beams=1, block_gradio_exit=False,
          max_new_tokens=max_new_tokens,
-         langchain_mode=langchain_mode, user_path=user_path,
+         langchain_mode=langchain_mode, langchain_action=langchain_action,
+         user_path=user_path,
          visible_langchain_modes=visible_langchain_modes,
          reverse_docs=reverse_docs)
 
-    from client_test import run_client_nochat_gen
+    from src.client_test import run_client_nochat_gen
     res_dict, client = run_client_nochat_gen(prompt=prompt, prompt_type=prompt_type,
                                              stream_output=stream_output,
-                                             max_new_tokens=max_new_tokens, langchain_mode=langchain_mode)
+                                             max_new_tokens=max_new_tokens, langchain_mode=langchain_mode,
+                                             langchain_action=langchain_action)
     assert 'Birds' in res_dict['response'] or \
            'and can learn new things' in res_dict['response'] or \
            'Once upon a time' in res_dict['response']
@@ -251,7 +255,7 @@ def test_client_chat_stream_langchain_steps(max_new_tokens, top_k_docs):
     langchain_mode = 'UserData'
     visible_langchain_modes = ['UserData', 'MyData']
 
-    from generate import main
+    from src.gen import main
     main(base_model=base_model, prompt_type=prompt_type, chat=True,
          stream_output=stream_output, gradio=True, num_beams=1, block_gradio_exit=False,
          max_new_tokens=max_new_tokens,
@@ -261,7 +265,7 @@ def test_client_chat_stream_langchain_steps(max_new_tokens, top_k_docs):
          reverse_docs=False,  # for 6_9
          )
 
-    from client_test import get_client, get_args, run_client
+    from src.client_test import get_client, get_args, run_client
     client = get_client(serialize=False)
 
     # QUERY1
@@ -343,7 +347,10 @@ def test_client_chat_stream_langchain_steps(max_new_tokens, top_k_docs):
             'A secure, private, and anonymous chat service' in res_dict['response'] or
             'LLaMa is a language' in res_dict['response'] or
             'chatbot that can' in res_dict['response'] or
-            'A secure, private, and anonymous chatbot' in res_dict['response']
+            'A secure, private, and anonymous chatbot' in res_dict['response'] or
+            'A secure, encrypted chat service that allows' in res_dict['response'] or
+            'A secure, private, and encrypted chatbot' in res_dict['response'] or
+            'A secret communication system used' in res_dict['response']
             ) \
            and '.md' in res_dict['response']
 
@@ -355,7 +362,7 @@ def test_client_chat_stream_langchain_steps(max_new_tokens, top_k_docs):
 def test_client_chat_stream_langchain_steps2(max_new_tokens, top_k_docs):
     os.environ['VERBOSE_PIPELINE'] = '1'
     # full user data
-    from make_db import make_db_main
+    from src.make_db import make_db_main
     make_db_main(download_some=True)
     user_path = None  # shouldn't be necessary, db already made
 
@@ -366,7 +373,7 @@ def test_client_chat_stream_langchain_steps2(max_new_tokens, top_k_docs):
     langchain_mode = 'UserData'
     visible_langchain_modes = ['UserData', 'MyData', 'github h2oGPT']
 
-    from generate import main
+    from src.gen import main
     main(base_model=base_model, prompt_type=prompt_type, chat=True,
          stream_output=stream_output, gradio=True, num_beams=1, block_gradio_exit=False,
          max_new_tokens=max_new_tokens,
@@ -374,7 +381,7 @@ def test_client_chat_stream_langchain_steps2(max_new_tokens, top_k_docs):
          visible_langchain_modes=visible_langchain_modes,
          verbose=True)
 
-    from client_test import get_client, get_args, run_client
+    from src.client_test import get_client, get_args, run_client
     client = get_client(serialize=False)
 
     # QUERY1
@@ -418,6 +425,39 @@ def test_client_chat_stream_long():
     assert 'Once upon a time' in res_dict['response']
 
 
+@wrap_test_forked
+def test_autogptq():
+    prompt = 'Who are you?'
+    stream_output = False
+    max_new_tokens = 256
+    base_model = 'TheBloke/Nous-Hermes-13B-GPTQ'
+    load_gptq = 'nous-hermes-13b-GPTQ-4bit-128g.no-act.order'
+    use_safetensors = True
+    prompt_type = 'instruct'
+    langchain_mode = 'Disabled'
+    langchain_action = LangChainAction.QUERY.value
+    user_path = None
+    visible_langchain_modes = ['UserData', 'MyData']
+    reverse_docs = True
+    from src.gen import main
+    main(base_model=base_model, load_gptq=load_gptq,
+         use_safetensors=use_safetensors,
+         prompt_type=prompt_type, chat=True,
+         stream_output=stream_output, gradio=True, num_beams=1, block_gradio_exit=False,
+         max_new_tokens=max_new_tokens,
+         langchain_mode=langchain_mode, user_path=user_path,
+         visible_langchain_modes=visible_langchain_modes,
+         reverse_docs=reverse_docs)
+
+    from src.client_test import run_client_chat
+    res_dict, client = run_client_chat(prompt=prompt, prompt_type=prompt_type, stream_output=stream_output,
+                                       max_new_tokens=max_new_tokens, langchain_mode=langchain_mode,
+                                       langchain_action=langchain_action)
+    assert res_dict['prompt'] == prompt
+    assert res_dict['iinput'] == ''
+    assert "am a virtual assistant" in res_dict['response']
+
+
 @pytest.mark.skip(reason="Local file required")
 @wrap_test_forked
 def test_client_long():
@@ -425,21 +465,21 @@ def test_client_long():
     sys.modules.pop('gpt_langchain', None)
     sys.modules.pop('langchain', None)
 
-    from generate import main
+    from src.gen import main
     main(base_model='mosaicml/mpt-7b-storywriter', prompt_type='plain', chat=False,
          stream_output=False, gradio=True, num_beams=1, block_gradio_exit=False)
 
     with open("/home/jon/Downloads/Gatsby_PDF_FullText.txt") as f:
         prompt = f.readlines()
 
-    from client_test import run_client_nochat
+    from src.client_test import run_client_nochat
     res_dict, _ = run_client_nochat(prompt=prompt, prompt_type='plain', max_new_tokens=86000)
     print(res_dict['response'])
 
 
 @wrap_test_forked
 def test_fast_up():
-    from generate import main
+    from src.gen import main
     main(gradio=True, block_gradio_exit=False)
 
 
@@ -457,7 +497,7 @@ def test_client_stress(repeat):
     # HOST=http://192.168.1.46:9999 STRESS=1 pytest -s -v -n 8 --timeout=1000 tests/test_client_calls.py::test_client_stress 2> stress1.log
 
     prompt = "Tell a very long kid's story about birds."
-    #prompt = "Say exactly only one word."
+    # prompt = "Say exactly only one word."
 
     client = get_client(serialize=True)
     kwargs = dict(

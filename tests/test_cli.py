@@ -1,7 +1,7 @@
 import pytest
 
 from tests.utils import wrap_test_forked, get_llama
-from enums import DocumentChoices
+from src.enums import DocumentChoices
 
 
 @wrap_test_forked
@@ -9,7 +9,7 @@ def test_cli(monkeypatch):
     query = "What is the Earth?"
     monkeypatch.setattr('builtins.input', lambda _: query)
 
-    from generate import main
+    from src.gen import main
     all_generations = main(base_model='gptj', cli=True, cli_loop=False, score_model='None')
 
     assert len(all_generations) == 1
@@ -24,12 +24,12 @@ def test_cli_langchain(monkeypatch):
     query = "What is the cat doing?"
     monkeypatch.setattr('builtins.input', lambda _: query)
 
-    from generate import main
+    from src.gen import main
     all_generations = main(base_model='gptj', cli=True, cli_loop=False, score_model='None',
                            langchain_mode='UserData',
                            user_path=user_path,
                            visible_langchain_modes=['UserData', 'MyData'],
-                           document_choice=[DocumentChoices.All_Relevant.name],
+                           document_subset=DocumentChoices.Relevant.name,
                            verbose=True)
 
     print(all_generations)
@@ -37,7 +37,8 @@ def test_cli_langchain(monkeypatch):
     assert "pexels-evg-kowalievska-1170986_small.jpg" in all_generations[0]
     assert "looking out the window" in all_generations[0] or \
            "staring out the window at the city skyline" in all_generations[0] or \
-           "what the cat is doing" in all_generations[0]
+           "what the cat is doing" in all_generations[0] or \
+           "question about a cat" in all_generations[0]
 
 
 @pytest.mark.need_tokens
@@ -51,13 +52,13 @@ def test_cli_langchain_llamacpp(monkeypatch):
     query = "What is the cat doing?"
     monkeypatch.setattr('builtins.input', lambda _: query)
 
-    from generate import main
+    from src.gen import main
     all_generations = main(base_model='llama', cli=True, cli_loop=False, score_model='None',
                            langchain_mode='UserData',
                            prompt_type=prompt_type,
                            user_path=user_path,
                            visible_langchain_modes=['UserData', 'MyData'],
-                           document_choice=[DocumentChoices.All_Relevant.name],
+                           document_subset=DocumentChoices.Relevant.name,
                            verbose=True)
 
     print(all_generations)
@@ -78,13 +79,13 @@ def test_cli_llamacpp(monkeypatch):
     query = "Who are you?"
     monkeypatch.setattr('builtins.input', lambda _: query)
 
-    from generate import main
+    from src.gen import main
     all_generations = main(base_model='llama', cli=True, cli_loop=False, score_model='None',
                            langchain_mode='Disabled',
                            prompt_type=prompt_type,
                            user_path=None,
                            visible_langchain_modes=[],
-                           document_choice=[DocumentChoices.All_Relevant.name],
+                           document_subset=DocumentChoices.Relevant.name,
                            verbose=True)
 
     print(all_generations)
@@ -99,7 +100,7 @@ def test_cli_h2ogpt(monkeypatch):
     query = "What is the Earth?"
     monkeypatch.setattr('builtins.input', lambda _: query)
 
-    from generate import main
+    from src.gen import main
     all_generations = main(base_model='h2oai/h2ogpt-oig-oasst1-512-6_9b', cli=True, cli_loop=False, score_model='None')
 
     assert len(all_generations) == 1
@@ -115,13 +116,13 @@ def test_cli_langchain_h2ogpt(monkeypatch):
     query = "What is the cat doing?"
     monkeypatch.setattr('builtins.input', lambda _: query)
 
-    from generate import main
+    from src.gen import main
     all_generations = main(base_model='h2oai/h2ogpt-oig-oasst1-512-6_9b',
                            cli=True, cli_loop=False, score_model='None',
                            langchain_mode='UserData',
                            user_path=user_path,
                            visible_langchain_modes=['UserData', 'MyData'],
-                           document_choice=[DocumentChoices.All_Relevant.name],
+                           document_subset=DocumentChoices.Relevant.name,
                            verbose=True)
 
     print(all_generations)

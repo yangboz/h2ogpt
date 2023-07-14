@@ -23,8 +23,10 @@ from langchain.callbacks import streaming_stdout
 from langchain.embeddings import HuggingFaceInstructEmbeddings
 from tqdm import tqdm
 
-from enums import DocumentChoices, no_lora_str, model_token_mapping, source_prefix, source_postfix
-from generate import gen_hyper, get_model, SEED
+from enums import DocumentChoices, no_lora_str, model_token_mapping, source_prefix, source_postfix, non_query_commands, \
+    LangChainAction, LangChainMode
+from evaluate_params import gen_hyper
+from gen import get_model, SEED
 from prompter import non_hf_types, PromptType, Prompter
 from utils import wrapped_partial, EThread, import_matplotlib, sanitize_filename, makedirs, get_url, flatten_list, \
     get_device, ProgressParallel, remove, hash_file, clear_torch_cache, NullContext, get_hf_server, FakeTokenizer
@@ -43,7 +45,8 @@ from langchain.chains.qa_with_sources import load_qa_with_sources_chain
 from langchain.document_loaders import PyPDFLoader, TextLoader, CSVLoader, PythonLoader, TomlLoader, \
     UnstructuredURLLoader, UnstructuredHTMLLoader, UnstructuredWordDocumentLoader, UnstructuredMarkdownLoader, \
     EverNoteLoader, UnstructuredEmailLoader, UnstructuredODTLoader, UnstructuredPowerPointLoader, \
-    UnstructuredEPubLoader, UnstructuredImageLoader, UnstructuredRTFLoader, ArxivLoader, UnstructuredPDFLoader
+    UnstructuredEPubLoader, UnstructuredImageLoader, UnstructuredRTFLoader, ArxivLoader, UnstructuredPDFLoader, \
+    UnstructuredExcelLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter, Language
 from langchain.chains.question_answering import load_qa_chain
 from langchain.docstore.document import Document
@@ -351,6 +354,7 @@ class GradioInference(LLM):
         stream_output = self.stream
         gr_client = self.client
         client_langchain_mode = 'Disabled'
+        client_langchain_action = LangChainAction.QUERY.value
         top_k_docs = 1
         chunk = True
         chunk_size = 512
@@ -379,10 +383,12 @@ class GradioInference(LLM):
                              instruction_nochat=prompt if not self.chat_client else '',
                              iinput_nochat='',  # only for chat=False
                              langchain_mode=client_langchain_mode,
+                             langchain_action=client_langchain_action,
                              top_k_docs=top_k_docs,
                              chunk=chunk,
                              chunk_size=chunk_size,
-                             document_choice=[DocumentChoices.All_Relevant.name],
+                             document_subset=DocumentChoices.Relevant.name,
+                             document_choice=[],
                              )
         api_name = '/submit_nochat_api'  # NOTE: like submit_nochat but stable API for string dict passing
         if not stream_output:
@@ -637,6 +643,7 @@ def get_llm(use_openai_model=False,
         callbacks = [StreamingGradioCallbackHandler()]
         assert prompter is not None
         stop_sequences = list(set(prompter.terminate_response + [prompter.PreResponse]))
+        stop_sequences = [x for x in stop_sequences if x]
 
         if gr_client:
             chat_client = False
@@ -744,7 +751,7 @@ def get_llm(use_openai_model=False,
 
         if stream_output:
             skip_prompt = False
-            from generate import H2OTextIteratorStreamer
+            from gen import H2OTextIteratorStreamer
             decoder_kwargs = {}
             streamer = H2OTextIteratorStreamer(tokenizer, skip_prompt=skip_prompt, block=False, **decoder_kwargs)
             gen_kwargs.update(dict(streamer=streamer))
@@ -944,14 +951,16 @@ have_playwright = False
 
 image_types = ["png", "jpg", "jpeg"]
 non_image_types = ["pdf", "txt", "csv", "toml", "py", "rst", "rtf",
-                   "md", "html",
+                   "md",
+                   "html", "mhtml",
                    "enex", "eml", "epub", "odt", "pptx", "ppt",
                    "zip", "urls",
+
                    ]
 # "msg",  GPL3
 
 if have_libreoffice:
-    non_image_types.extend(["docx", "doc"])
+    non_image_types.extend(["docx", "doc", "xls", "xlsx"])
 
 file_types = non_image_types + image_types
 
@@ -961,11 +970,11 @@ def add_meta(docs1, file):
     hashid = hash_file(file)
     if not isinstance(docs1, (list, tuple, types.GeneratorType)):
         docs1 = [docs1]
-    [x.metadata.update(dict(input_type=file_extension, date=str(datetime.now), hashid=hashid)) for x in docs1]
+    [x.metadata.update(dict(input_type=file_extension, date=str(datetime.now()), hashid=hashid)) for x in docs1]
 
 
 def file_to_doc(file, base_path=None, verbose=False, fail_any_exception=False,
-                chunk=True, chunk_size=512,
+                chunk=True, chunk_size=512, n_jobs=-1,
                 is_url=False, is_txt=False,
                 enable_captions=True,
                 captions_model=None,
@@ -1036,6 +1045,10 @@ def file_to_doc(file, base_path=None, verbose=False, fail_any_exception=False,
         doc1 = chunk_sources(docs1, chunk=chunk, chunk_size=chunk_size, language=Language.HTML)
     elif (file.lower().endswith('.docx') or file.lower().endswith('.doc')) and have_libreoffice:
         docs1 = UnstructuredWordDocumentLoader(file_path=file).load()
+        add_meta(docs1, file)
+        doc1 = chunk_sources(docs1, chunk=chunk, chunk_size=chunk_size)
+    elif (file.lower().endswith('.xlsx') or file.lower().endswith('.xls')) and have_libreoffice:
+        docs1 = UnstructuredExcelLoader(file_path=file).load()
         add_meta(docs1, file)
         doc1 = chunk_sources(docs1, chunk=chunk, chunk_size=chunk_size)
     elif file.lower().endswith('.odt'):
@@ -1171,7 +1184,7 @@ def file_to_doc(file, base_path=None, verbose=False, fail_any_exception=False,
             # so just extract in path where
             zip_ref.extractall(base_path)
             # recurse
-            doc1 = path_to_docs(base_path, verbose=verbose, fail_any_exception=fail_any_exception)
+            doc1 = path_to_docs(base_path, verbose=verbose, fail_any_exception=fail_any_exception, n_jobs=n_jobs)
     else:
         raise RuntimeError("No file handler for %s" % os.path.basename(file))
 
@@ -1196,6 +1209,7 @@ def file_to_doc(file, base_path=None, verbose=False, fail_any_exception=False,
 
 def path_to_doc1(file, verbose=False, fail_any_exception=False, return_file=True,
                  chunk=True, chunk_size=512,
+                 n_jobs=-1,
                  is_url=False, is_txt=False,
                  enable_captions=True,
                  captions_model=None,
@@ -1212,6 +1226,7 @@ def path_to_doc1(file, verbose=False, fail_any_exception=False, return_file=True
         # don't pass base_path=path, would infinitely recurse
         res = file_to_doc(file, base_path=None, verbose=verbose, fail_any_exception=fail_any_exception,
                           chunk=chunk, chunk_size=chunk_size,
+                          n_jobs=n_jobs,
                           is_url=is_url, is_txt=is_txt,
                           enable_captions=enable_captions,
                           captions_model=captions_model,
@@ -1224,7 +1239,8 @@ def path_to_doc1(file, verbose=False, fail_any_exception=False, return_file=True
         else:
             exception_doc = Document(
                 page_content='',
-                metadata={"source": file, "exception": str(e), "traceback": traceback.format_exc()})
+                metadata={"source": file, "exception": '%s hit %s' % (file, str(e)),
+                          "traceback": traceback.format_exc()})
             res = [exception_doc]
     if return_file:
         base_tmp = "temp_path_to_doc1"
@@ -1314,6 +1330,7 @@ def path_to_docs(path_or_paths, verbose=False, fail_any_exception=False, n_jobs=
     kwargs = dict(verbose=verbose, fail_any_exception=fail_any_exception,
                   return_file=return_file,
                   chunk=chunk, chunk_size=chunk_size,
+                  n_jobs=n_jobs,
                   is_url=is_url,
                   is_txt=is_txt,
                   enable_captions=enable_captions,
@@ -1758,6 +1775,8 @@ def run_qa_db(**kwargs):
 
 
 def _run_qa_db(query=None,
+               iinput=None,
+               context=None,
                use_openai_model=False, use_openai_embedding=False,
                first_para=False, text_limit=None, top_k_docs=4, chunk=True, chunk_size=512,
                user_path=None,
@@ -1787,7 +1806,9 @@ def _run_qa_db(query=None,
                repetition_penalty=1.0,
                num_return_sequences=1,
                langchain_mode=None,
-               document_choice=[DocumentChoices.All_Relevant.name],
+               langchain_action=None,
+               document_subset=DocumentChoices.Relevant.name,
+               document_choice=[],
                n_jobs=-1,
                verbose=False,
                cli=False,
@@ -1803,7 +1824,7 @@ def _run_qa_db(query=None,
     :param use_openai_embedding:
     :param first_para:
     :param text_limit:
-    :param k:
+    :param top_k_docs:
     :param chunk:
     :param chunk_size:
     :param user_path: user path to glob recursively from
@@ -1858,23 +1879,33 @@ def _run_qa_db(query=None,
     if isinstance(document_choice, str):
         # support string as well
         document_choice = [document_choice]
-    # get first DocumentChoices as command to use, ignore others
-    doc_choices_set = set([x.name for x in list(DocumentChoices)])
-    cmd = [x for x in document_choice if x in doc_choices_set]
-    cmd = None if len(cmd) == 0 else cmd[0]
-    # now have cmd, filter out for only docs
-    document_choice = [x for x in document_choice if x not in doc_choices_set]
 
-    func_names = list(inspect.signature(get_similarity_chain).parameters)
+    func_names = list(inspect.signature(get_chain).parameters)
     sim_kwargs = {k: v for k, v in locals().items() if k in func_names}
     missing_kwargs = [x for x in func_names if x not in sim_kwargs]
     assert not missing_kwargs, "Missing: %s" % missing_kwargs
-    docs, chain, scores, use_context = get_similarity_chain(**sim_kwargs)
-    if cmd in [DocumentChoices.All_Relevant_Only_Sources.name, DocumentChoices.Only_All_Sources.name]:
+    docs, chain, scores, use_context, have_any_docs = get_chain(**sim_kwargs)
+    if document_subset in non_query_commands:
         formatted_doc_chunks = '\n\n'.join([get_url(x) + '\n\n' + x.page_content for x in docs])
         yield formatted_doc_chunks, ''
         return
+    if not docs and langchain_action in [LangChainAction.SUMMARIZE_MAP.value,
+                                         LangChainAction.SUMMARIZE_ALL.value,
+                                         LangChainAction.SUMMARIZE_REFINE.value]:
+        ret = 'No relevant documents to summarize.' if have_any_docs else 'No documents to summarize.'
+        extra = ''
+        yield ret, extra
+        return
+    if not docs and langchain_mode not in [LangChainMode.DISABLED.value,
+                                           LangChainMode.CHAT_LLM.value,
+                                           LangChainMode.LLM.value]:
+        ret = 'No relevant documents to query.' if have_any_docs else 'No documents to query.'
+        extra = ''
+        yield ret, extra
+        return
+
     if chain is None and model_name not in non_hf_types:
+        # here if no docs at all and not HF type
         # can only return if HF type
         return
 
@@ -1932,34 +1963,36 @@ def _run_qa_db(query=None,
     return
 
 
-def get_similarity_chain(query=None,
-                         use_openai_model=False, use_openai_embedding=False,
-                         first_para=False, text_limit=None, top_k_docs=4, chunk=True, chunk_size=512,
-                         user_path=None,
-                         detect_user_path_changes_every_query=False,
-                         db_type='faiss',
-                         model_name=None,
-                         inference_server='',
-                         hf_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
-                         prompt_type=None,
-                         prompt_dict=None,
-                         cut_distanct=1.1,
-                         load_db_if_exists=False,
-                         db=None,
-                         langchain_mode=None,
-                         document_choice=[DocumentChoices.All_Relevant.name],
-                         n_jobs=-1,
-                         # beyond run_db_query:
-                         llm=None,
-                         tokenizer=None,
-                         verbose=False,
-                         cmd=None,
-                         reverse_docs=True,
+def get_chain(query=None,
+              iinput=None,
+              use_openai_model=False, use_openai_embedding=False,
+              first_para=False, text_limit=None, top_k_docs=4, chunk=True, chunk_size=512,
+              user_path=None,
+              detect_user_path_changes_every_query=False,
+              db_type='faiss',
+              model_name=None,
+              inference_server='',
+              hf_embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+              prompt_type=None,
+              prompt_dict=None,
+              cut_distanct=1.1,
+              load_db_if_exists=False,
+              db=None,
+              langchain_mode=None,
+              langchain_action=None,
+              document_subset=DocumentChoices.Relevant.name,
+              document_choice=[],
+              n_jobs=-1,
+              # beyond run_db_query:
+              llm=None,
+              tokenizer=None,
+              verbose=False,
+              reverse_docs=True,
 
-                         # local
-                         auto_reduce_chunks=True,
-                         max_chunks=100,
-                         ):
+              # local
+              auto_reduce_chunks=True,
+              max_chunks=100,
+              ):
     # determine whether use of context out of docs is planned
     if not use_openai_model and prompt_type not in ['plain'] or model_name in non_hf_types:
         if langchain_mode in ['Disabled', 'ChatLLM', 'LLM']:
@@ -1997,37 +2030,81 @@ def get_similarity_chain(query=None,
                                                         db=db,
                                                         n_jobs=n_jobs,
                                                         verbose=verbose)
+    have_any_docs = db is not None
+    if langchain_action == LangChainAction.QUERY.value:
+        if iinput:
+            query = "%s\n%s" % (query, iinput)
 
-    if 'falcon' in model_name:
-        extra = "According to only the information in the document sources provided within the context above, "
-        prefix = "Pay attention and remember information below, which will help to answer the question or imperative after the context ends."
-    elif inference_server in ['openai', 'openai_chat']:
-        extra = "According to (primarily) the information in the document sources provided within context above, "
-        prefix = "Pay attention and remember information below, which will help to answer the question or imperative after the context ends.  If the answer cannot be primarily obtained from information within the context, then respond that the answer does not appear in the context of the documents."
-    else:
-        extra = ""
-        prefix = ""
-    if langchain_mode in ['Disabled', 'ChatLLM', 'LLM'] or not use_context:
-        template_if_no_docs = template = """%s{context}{question}""" % prefix
-    else:
-        template = """%s
+        if 'falcon' in model_name:
+            extra = "According to only the information in the document sources provided within the context above, "
+            prefix = "Pay attention and remember information below, which will help to answer the question or imperative after the context ends."
+        elif inference_server in ['openai', 'openai_chat']:
+            extra = "According to (primarily) the information in the document sources provided within context above, "
+            prefix = "Pay attention and remember information below, which will help to answer the question or imperative after the context ends.  If the answer cannot be primarily obtained from information within the context, then respond that the answer does not appear in the context of the documents."
+        else:
+            extra = ""
+            prefix = ""
+        if langchain_mode in ['Disabled', 'ChatLLM', 'LLM'] or not use_context:
+            template_if_no_docs = template = """%s{context}{question}""" % prefix
+        else:
+            template = """%s
+    \"\"\"
+    {context}
+    \"\"\"
+    %s{question}""" % (prefix, extra)
+            template_if_no_docs = """%s{context}%s{question}""" % (prefix, extra)
+    elif langchain_action in [LangChainAction.SUMMARIZE_ALL.value, LangChainAction.SUMMARIZE_MAP.value]:
+        none = ['', '\n', None]
+        if query in none and iinput in none:
+            prompt_summary = "Using only the text above, write a condensed and concise summary:\n"
+        elif query not in none:
+            prompt_summary = "Focusing on %s, write a condensed and concise Summary:\n" % query
+        elif iinput not in None:
+            prompt_summary = iinput
+        else:
+            prompt_summary = "Focusing on %s, %s:\n" % (query, iinput)
+        # don't auto reduce
+        auto_reduce_chunks = False
+        if langchain_action == LangChainAction.SUMMARIZE_MAP.value:
+            fstring = '{text}'
+        else:
+            fstring = '{input_documents}'
+        template = """In order to write a concise single-paragraph or bulleted list summary, pay attention to the following text:
 \"\"\"
-{context}
-\"\"\"
-%s{question}""" % (prefix, extra)
-        template_if_no_docs = """%s{context}%s{question}""" % (prefix, extra)
+%s
+\"\"\"\n%s""" % (fstring, prompt_summary)
+        template_if_no_docs = "Exactly only say: There are no documents to summarize."
+    elif langchain_action in [LangChainAction.SUMMARIZE_REFINE]:
+        template = ''  # unused
+        template_if_no_docs = ''  # unused
+    else:
+        raise RuntimeError("No such langchain_action=%s" % langchain_action)
+
     if not use_openai_model and prompt_type not in ['plain'] or model_name in non_hf_types:
         use_template = True
     else:
         use_template = False
 
     if db and use_context:
+        base_path = 'locks'
+        makedirs(base_path)
+        if hasattr(db, '_persist_directory'):
+            name_path = "sim_%s.lock" % os.path.basename(db._persist_directory)
+        else:
+            name_path = "sim.lock"
+        lock_file = os.path.join(base_path, name_path)
+
         if not isinstance(db, Chroma):
             # only chroma supports filtering
             filter_kwargs = {}
         else:
-            # if here then some cmd + documents selected or just documents selected
-            if len(document_choice) >= 2:
+            assert document_choice is not None, "Document choice was None"
+            if len(document_choice) >= 1 and document_choice[0] == DocumentChoices.All.name:
+                filter_kwargs = {}
+            elif len(document_choice) >= 2:
+                if document_choice[0] == DocumentChoices.All.name:
+                    # remove 'All'
+                    document_choice = document_choice[1:]
                 or_filter = [{"source": {"$eq": x}} for x in document_choice]
                 filter_kwargs = dict(filter={"$or": or_filter})
             elif len(document_choice) == 1:
@@ -2037,27 +2114,33 @@ def get_similarity_chain(query=None,
             else:
                 # shouldn't reach
                 filter_kwargs = {}
-        if cmd == DocumentChoices.Just_LLM.name:
+        if langchain_mode in [LangChainMode.LLM.value, LangChainMode.CHAT_LLM.value]:
             docs = []
             scores = []
-        elif cmd == DocumentChoices.Only_All_Sources.name:
+        elif document_subset == DocumentChoices.All.name or query in [None, '', '\n']:
             db_documents, db_metadatas = get_docs_and_meta(db, top_k_docs, filter_kwargs=filter_kwargs)
             # similar to langchain's chroma's _results_to_docs_and_scores
             docs_with_score = [(Document(page_content=result[0], metadata=result[1] or {}), 0)
-                               for result in zip(db_documents, db_metadatas)][:top_k_docs]
+                               for result in zip(db_documents, db_metadatas)]
+
+            # order documents
+            doc_hashes = [x['doc_hash'] for x in db_metadatas]
+            doc_chunk_ids = [x['chunk_id'] for x in db_metadatas]
+            docs_with_score = [x for _, _, x in
+                               sorted(zip(doc_hashes, doc_chunk_ids, docs_with_score), key=lambda x: (x[0], x[1]))
+                               ]
+
+            docs_with_score = docs_with_score[:top_k_docs]
             docs = [x[0] for x in docs_with_score]
             scores = [x[1] for x in docs_with_score]
+            have_any_docs |= len(docs) > 0
         else:
+            # FIXME: if langchain_action == LangChainAction.SUMMARIZE_MAP.value
+            # if map_reduce, then no need to auto reduce chunks
             if top_k_docs == -1 or auto_reduce_chunks:
                 # docs_with_score = db.similarity_search_with_score(query, k=k_db, **filter_kwargs)[:top_k_docs]
                 top_k_docs_tokenize = 100
-                base_path = 'locks'
-                makedirs(base_path)
-                if hasattr(db, '_persist_directory'):
-                    name_path = "sim_%s.lock" % os.path.basename(db._persist_directory)
-                else:
-                    name_path = "sim.lock"
-                with filelock.FileLock(os.path.join(base_path, name_path)):
+                with filelock.FileLock(lock_file):
                     docs_with_score = db.similarity_search_with_score(query, k=k_db, **filter_kwargs)[
                                       :top_k_docs_tokenize]
                 if hasattr(llm, 'pipeline') and hasattr(llm.pipeline, 'tokenizer'):
@@ -2113,13 +2196,15 @@ def get_similarity_chain(query=None,
                     top_k_docs = 1
                 docs_with_score = docs_with_score[:top_k_docs]
             else:
-                docs_with_score = db.similarity_search_with_score(query, k=k_db, **filter_kwargs)[:top_k_docs]
+                with filelock.FileLock(lock_file):
+                    docs_with_score = db.similarity_search_with_score(query, k=k_db, **filter_kwargs)[:top_k_docs]
             # put most relevant chunks closest to question,
             # esp. if truncation occurs will be "oldest" or "farthest from response" text that is truncated
             # BUT: for small models, e.g. 6_9 pythia, if sees some stuff related to h2oGPT first, it can connect that and not listen to rest
             if reverse_docs:
                 docs_with_score.reverse()
             # cut off so no high distance docs/sources considered
+            have_any_docs |= len(docs_with_score) > 0  # before cut
             docs = [x[0] for x in docs_with_score if x[1] < cut_distanct]
             scores = [x[1] for x in docs_with_score if x[1] < cut_distanct]
             if len(scores) > 0 and verbose:
@@ -2131,14 +2216,14 @@ def get_similarity_chain(query=None,
 
     if not docs and use_context and model_name not in non_hf_types:
         # if HF type and have no docs, can bail out
-        return docs, None, [], False
+        return docs, None, [], False, have_any_docs
 
-    if cmd in [DocumentChoices.All_Relevant_Only_Sources.name, DocumentChoices.Only_All_Sources.name]:
+    if document_subset in non_query_commands:
         # no LLM use
-        return docs, None, [], False
+        return docs, None, [], False, have_any_docs
 
     common_words_file = "data/NGSL_1.2_stats.csv.zip"
-    if os.path.isfile(common_words_file):
+    if os.path.isfile(common_words_file) and langchain_mode == LangChainAction.QUERY.value:
         df = pd.read_csv("data/NGSL_1.2_stats.csv.zip")
         import string
         reduced_query = query.translate(str.maketrans(string.punctuation, ' ' * len(string.punctuation))).strip()
@@ -2155,25 +2240,47 @@ def get_similarity_chain(query=None,
         use_context = False
         template = template_if_no_docs
 
-    if use_template:
-        # instruct-like, rather than few-shot prompt_type='plain' as default
-        # but then sources confuse the model with how inserted among rest of text, so avoid
-        prompt = PromptTemplate(
-            # input_variables=["summaries", "question"],
-            input_variables=["context", "question"],
-            template=template,
-        )
-        chain = load_qa_chain(llm, prompt=prompt)
+    if langchain_action == LangChainAction.QUERY.value:
+        if use_template:
+            # instruct-like, rather than few-shot prompt_type='plain' as default
+            # but then sources confuse the model with how inserted among rest of text, so avoid
+            prompt = PromptTemplate(
+                # input_variables=["summaries", "question"],
+                input_variables=["context", "question"],
+                template=template,
+            )
+            chain = load_qa_chain(llm, prompt=prompt)
+        else:
+            # only if use_openai_model = True, unused normally except in testing
+            chain = load_qa_with_sources_chain(llm)
+        if not use_context:
+            chain_kwargs = dict(input_documents=[], question=query)
+        else:
+            chain_kwargs = dict(input_documents=docs, question=query)
+        target = wrapped_partial(chain, chain_kwargs)
+    elif langchain_action in [LangChainAction.SUMMARIZE_MAP.value,
+                              LangChainAction.SUMMARIZE_REFINE,
+                              LangChainAction.SUMMARIZE_ALL.value]:
+        from langchain.chains.summarize import load_summarize_chain
+        if langchain_action == LangChainAction.SUMMARIZE_MAP.value:
+            prompt = PromptTemplate(input_variables=["text"], template=template)
+            chain = load_summarize_chain(llm, chain_type="map_reduce",
+                                         map_prompt=prompt, combine_prompt=prompt, return_intermediate_steps=True)
+            target = wrapped_partial(chain, {"input_documents": docs})  # , return_only_outputs=True)
+        elif langchain_action == LangChainAction.SUMMARIZE_ALL.value:
+            assert use_template
+            prompt = PromptTemplate(input_variables=["text"], template=template)
+            chain = load_summarize_chain(llm, chain_type="stuff", prompt=prompt, return_intermediate_steps=True)
+            target = wrapped_partial(chain)
+        elif langchain_action == LangChainAction.SUMMARIZE_REFINE.value:
+            chain = load_summarize_chain(llm, chain_type="refine", return_intermediate_steps=True)
+            target = wrapped_partial(chain)
+        else:
+            raise RuntimeError("No such langchain_action=%s" % langchain_action)
     else:
-        chain = load_qa_with_sources_chain(llm)
+        raise RuntimeError("No such langchain_action=%s" % langchain_action)
 
-    if not use_context:
-        chain_kwargs = dict(input_documents=[], question=query)
-    else:
-        chain_kwargs = dict(input_documents=docs, question=query)
-
-    target = wrapped_partial(chain, chain_kwargs)
-    return docs, target, scores, use_context
+    return docs, target, scores, use_context, have_any_docs
 
 
 def get_sources_answer(query, answer, scores, show_rank, answer_with_sources, verbose=False):
@@ -2243,6 +2350,11 @@ def chunk_sources(sources, chunk=True, chunk_size=512, language=None):
     splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=0, keep_separator=keep_separator,
                                               separators=separators)
     source_chunks = splitter.split_documents(sources)
+
+    # currently in order, but when pull from db won't be, so mark order and document by hash
+    doc_hash = str(uuid.uuid4())[:10]
+    [x.metadata.update(dict(doc_hash=doc_hash, chunk_id=chunk_id)) for chunk_id, x in enumerate(source_chunks)]
+
     return source_chunks
 
 
